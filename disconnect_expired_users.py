@@ -123,9 +123,10 @@ def get_expired_users():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            # Nota: A tabela é 'User' com U maiúsculo
             query = """
                 SELECT u.id, u.name, u.mac, u.updatedAt
-                FROM user u
+                FROM User u
                 WHERE u.updatedAt < %s
             """
             cursor.execute(query, (time_limit,))
