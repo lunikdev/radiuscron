@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model login {
+  id             Int       @id @default(autoincrement())
+  username       String    @unique
+  password       String
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  users          user[]    // Relação 1:N - um login pode ter vários usuários
+}
+
+model user {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String
+  phone     String
+  ip        String   
+  mac       String   @unique // Garantir que um MAC seja único no sistema
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  login     login    @relation(fields: [loginId], references: [id])
+  loginId   Int      
+}
+
+// Nota: Modelo conf está comentado e será criado manualmente pelo script de seed
+// model conf {
+//   id                      Int       @id @default(autoincrement())
+//   active_time_minutes     Int       @default(15) // Valor padrão de 15 minutos
+//   createdAt               DateTime  @default(now())
+//   updatedAt               DateTime  @updatedAt
+// }
