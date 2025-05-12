@@ -1,11 +1,11 @@
-require('dotenv').config();
+// Removido require('dotenv').config();
 const cron = require('node-cron');
 const { PrismaClient } = require('@prisma/client');
 const RouterOsApi = require('node-routeros').default;
 
 const prisma = new PrismaClient();
 
-// Configurações do Mikrotik
+// Configurações do Mikrotik - usando variáveis de ambiente diretamente
 const MIKROTIK_CONFIG = {
   host: process.env.MIKROTIK_HOST,
   username: process.env.MIKROTIK_USERNAME,
@@ -103,7 +103,7 @@ async function disconnectUser(mac) {
 // Função principal que verifica usuários expirados
 async function checkExpiredUsers() {
   console.log('\n--- Iniciando verificação de usuários expirados ---');
-  console.log(`Data/Hora: ${new Date().toLocaleString('pt-BR')}`);
+  console.log(`Data/Hora: ${new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
   
   try {
     // Obter tempo ativo configurado
@@ -113,7 +113,7 @@ async function checkExpiredUsers() {
     // Calcular o tempo limite
     const timeLimit = new Date();
     timeLimit.setMinutes(timeLimit.getMinutes() - activeTimeMinutes);
-    console.log(`Verificando usuários com última atualização antes de: ${timeLimit.toLocaleString('pt-BR')}`);
+    console.log(`Verificando usuários com última atualização antes de: ${timeLimit.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
     
     // Buscar usuários expirados
     const expiredUsers = await prisma.user.findMany({
@@ -137,7 +137,7 @@ async function checkExpiredUsers() {
     // Desconectar cada usuário expirado
     for (const user of expiredUsers) {
       console.log(`\nProcessando usuário: ${user.name} (MAC: ${user.mac})`);
-      console.log(`Última atualização: ${user.updatedAt.toLocaleString('pt-BR')}`);
+      console.log(`Última atualização: ${user.updatedAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`);
       
       // Desconectar o usuário do Mikrotik
       await disconnectUser(user.mac);
@@ -185,6 +185,25 @@ process.on('SIGINT', async () => {
 // Iniciar a aplicação
 async function main() {
   try {
+    // Verificar variáveis de ambiente obrigatórias
+    const requiredEnvVars = ['DATABASE_URL', 'MIKROTIK_HOST', 'MIKROTIK_USERNAME', 'MIKROTIK_PASSWORD'];
+    const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+    
+    if (missingVars.length > 0) {
+      console.error(`Erro: Variáveis de ambiente obrigatórias não definidas: ${missingVars.join(', ')}`);
+      console.error('Configure as seguintes variáveis de ambiente no EasyPanel:');
+      console.error('- DATABASE_URL: URL de conexão com o banco de dados MySQL');
+      console.error('- MIKROTIK_HOST: IP do Mikrotik');
+      console.error('- MIKROTIK_USERNAME: Usuário do Mikrotik');
+      console.error('- MIKROTIK_PASSWORD: Senha do Mikrotik');
+      console.error('Variáveis opcionais:');
+      console.error('- MIKROTIK_PORT: Porta da API (padrão: 8728)');
+      console.error('- CRON_PATTERN: Padrão do cron (padrão: */5 * * * *)');
+      console.error('- DEFAULT_ACTIVE_TIME_MINUTES: Tempo padrão em minutos (padrão: 15)');
+      console.error('- RUN_ON_START: Se "true", executa uma verificação ao iniciar');
+      process.exit(1);
+    }
+    
     // Testar conexão com o banco
     await prisma.$connect();
     console.log('✔ Conectado ao banco de dados');
