@@ -2,20 +2,23 @@ FROM python:3.9-slim
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# Definir diretório de trabalho
+# Criar diretório de trabalho
 WORKDIR /app
 
-# Copiar arquivo de requisitos
+# Copiar arquivos de requisitos primeiro (para cache do Docker)
 COPY requirements.txt .
 
 # Instalar dependências Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar código da aplicação
+# Copiar o resto do código
 COPY . .
 
+# Criar diretório de logs
+RUN mkdir -p /var/log
+
 # Comando para executar
-CMD ["python", "disconnect_expired_users.py"]
+CMD ["python", "-u", "disconnect_expired_users.py"]
