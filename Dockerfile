@@ -20,5 +20,8 @@ COPY . .
 # Criar diretório de logs
 RUN mkdir -p /var/log
 
+# Configurar buffer Python para saída imediata
+ENV PYTHONUNBUFFERED=1
+
 # Comando para executar
 CMD ["python", "-u", "disconnect_expired_users.py"]
