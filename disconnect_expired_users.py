@@ -113,7 +113,7 @@ def get_active_time_minutes():
     return DEFAULT_ACTIVE_TIME_MINUTES
 
 def get_expired_users():
-    """Busca usuários que ultrapassaram o tempo de sessão permitido"""
+    """Busca usuários que ultrapassaram o tempo de sessão permitido e ainda não foram desconectados"""
     active_time_minutes = get_active_time_minutes()
     time_limit = datetime.now() - timedelta(minutes=active_time_minutes)
     
@@ -123,11 +123,12 @@ def get_expired_users():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # Nota: A tabela é 'User' com U maiúsculo
+            # Buscar apenas usuários que ainda não foram removidos
             query = """
                 SELECT u.id, u.name, u.mac, u.updatedAt
                 FROM User u
                 WHERE u.updatedAt < %s
+                AND (u.removedhp = 'N' OR u.removedhp IS NULL)
             """
             cursor.execute(query, (time_limit,))
             users = cursor.fetchall()
@@ -137,6 +138,24 @@ def get_expired_users():
     except Exception as e:
         print(f"ERRO ao buscar usuários expirados: {e}", flush=True)
         return []
+
+def mark_user_as_disconnected(user_id):
+    """Marca um usuário como desconectado no banco de dados"""
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            query = """
+                UPDATE User 
+                SET removedhp = 'S', 
+                    disconnectedAt = NOW()
+                WHERE id = %s
+            """
+            cursor.execute(query, (user_id,))
+            conn.commit()
+            print(f"Usuário ID {user_id} marcado como desconectado no banco", flush=True)
+        conn.close()
+    except Exception as e:
+        print(f"ERRO ao marcar usuário como desconectado: {e}", flush=True)
 
 def remove_entries(api, path, field, mac):
     """Remove entradas do Mikrotik baseado no MAC address"""
@@ -210,7 +229,12 @@ def check_expired_users():
         for user in expired_users:
             print(f"\nProcessando usuário: {user['name']} (MAC: {user['mac']})", flush=True)
             print(f"Última atualização: {user['updatedAt']}", flush=True)
+            
+            # Desconectar do Mikrotik
             disconnect_user(user['mac'])
+            
+            # Marcar como desconectado no banco
+            mark_user_as_disconnected(user['id'])
         
         print("\n✔ Verificação de usuários expirados concluída", flush=True)
     except Exception as e:
