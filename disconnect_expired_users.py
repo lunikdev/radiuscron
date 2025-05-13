@@ -124,9 +124,10 @@ def get_expired_users():
         conn = get_db_connection()
         with conn.cursor() as cursor:
             # Buscar apenas usuários que ainda não foram removidos
+            # Nota: A tabela é 'user' com u minúsculo
             query = """
                 SELECT u.id, u.name, u.mac, u.updatedAt
-                FROM User u
+                FROM user u
                 WHERE u.updatedAt < %s
                 AND (u.removedhp = 'N' OR u.removedhp IS NULL)
             """
@@ -144,8 +145,9 @@ def mark_user_as_disconnected(user_id):
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
+            # Nota: A tabela é 'user' com u minúsculo
             query = """
-                UPDATE User 
+                UPDATE user 
                 SET removedhp = 'S', 
                     disconnectedAt = NOW()
                 WHERE id = %s
