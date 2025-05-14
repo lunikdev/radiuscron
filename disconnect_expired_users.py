@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-# disconnect_expired_users.py - Versão com tabela de sessões
+# disconnect_expired_users.py - Versão com tabela de sessões e remoção IXC
 
 import os
 import sys
 import time
 import schedule
 import pymysql
+import requests
+import base64
 from datetime import datetime, timedelta
 from routeros_api import RouterOsApiPool
 from routeros_api.exceptions import RouterOsApiConnectionError
@@ -14,11 +16,16 @@ print("=== Iniciando aplicação ===", flush=True)
 print(f"Python version: {sys.version}", flush=True)
 print(f"Current time: {datetime.now()}", flush=True)
 
-# Configurações do ambiente
+# Configurações do ambiente - Mikrotik
 MIKROTIK_HOST = os.environ.get('MIKROTIK_HOST', '192.168.88.1')
 MIKROTIK_USERNAME = os.environ.get('MIKROTIK_USERNAME', 'admin')
 MIKROTIK_PASSWORD = os.environ.get('MIKROTIK_PASSWORD', 'password')
 MIKROTIK_PORT = int(os.environ.get('MIKROTIK_PORT', '8728'))
+
+# Configurações do ambiente - IXC
+IXC_HOST = os.environ.get('IXC_HOST', '170.81.43.236')
+IXC_TOKEN = os.environ.get('IXC_TOKEN', '')
+IXC_API_BASE_URL = os.environ.get('IXC_API_BASE_URL', 'https://ixc.internet10.net.br/webservice/v1')
 
 # Configurações do banco de dados
 DATABASE_URL = os.environ.get('DATABASE_URL', '')
@@ -31,6 +38,8 @@ print(f"Configurações carregadas:", flush=True)
 print(f"  MIKROTIK_HOST: {MIKROTIK_HOST}", flush=True)
 print(f"  MIKROTIK_USERNAME: {MIKROTIK_USERNAME}", flush=True)
 print(f"  MIKROTIK_PORT: {MIKROTIK_PORT}", flush=True)
+print(f"  IXC_HOST: {IXC_HOST}", flush=True)
+print(f"  IXC_TOKEN configurado: {'Sim' if IXC_TOKEN else 'Não'}", flush=True)
 print(f"  DATABASE_URL configurada: {'Sim' if DATABASE_URL else 'Não'}", flush=True)
 print(f"  CHECK_INTERVAL_MINUTES: {CHECK_INTERVAL_MINUTES}", flush=True)
 print(f"  DEFAULT_ACTIVE_TIME_MINUTES: {DEFAULT_ACTIVE_TIME_MINUTES}", flush=True)
@@ -121,10 +130,12 @@ def get_expired_sessions():
     try:
         conn = get_db_connection()
         with conn.cursor() as cursor:
-            # Buscar apenas sessões que ainda não foram removidas
+            # Buscar apenas sessões que ainda não foram removidas, incluindo ixcId
             query = """
-                SELECT s.id, s.name, s.mac, s.updatedAt
+                SELECT s.id, s.name, s.mac, s.updatedAt, s.loginId,
+                       l.ixcId
                 FROM user_session s
+                INNER JOIN login l ON s.loginId = l.id
                 WHERE s.updatedAt < %s
                 AND (s.removedhp = 'N' OR s.removedhp IS NULL)
             """
@@ -154,6 +165,43 @@ def mark_session_as_disconnected(session_id):
         conn.close()
     except Exception as e:
         print(f"ERRO ao marcar sessão como desconectada: {e}", flush=True)
+
+def delete_ixc_login(ixc_id):
+    """Remove o login do sistema IXC"""
+    if not ixc_id:
+        print("IXC ID não encontrado, pulando remoção do IXC", flush=True)
+        return False
+    
+    if not IXC_TOKEN:
+        print("IXC_TOKEN não configurado, pulando remoção do IXC", flush=True)
+        return False
+    
+    try:
+        print(f"Removendo login IXC ID: {ixc_id}...", flush=True)
+        
+        # Montar URL para deletar
+        url = f"{IXC_API_BASE_URL}/radusuarios/{ixc_id}"
+        
+        # Preparar headers
+        token_encoded = base64.b64encode(IXC_TOKEN.encode('utf-8')).decode('utf-8')
+        headers = {
+            'ixcsoft': '',
+            'Authorization': f'Basic {token_encoded}',
+        }
+        
+        # Fazer requisição DELETE
+        response = requests.delete(url, headers=headers)
+        
+        if response.status_code == 200:
+            print(f"✔ Login IXC ID {ixc_id} removido com sucesso", flush=True)
+            return True
+        else:
+            print(f"✖ Erro ao remover login IXC ID {ixc_id}: Status {response.status_code}", flush=True)
+            print(f"  Resposta: {response.text}", flush=True)
+            return False
+    except Exception as e:
+        print(f"ERRO ao remover login do IXC: {e}", flush=True)
+        return False
 
 def remove_entries(api, path, field, mac):
     """Remove entradas do Mikrotik baseado no MAC address"""
@@ -227,9 +275,14 @@ def check_expired_sessions():
         for session in expired_sessions:
             print(f"\nProcessando sessão: {session['name']} (MAC: {session['mac']})", flush=True)
             print(f"Última atualização: {session['updatedAt']}", flush=True)
+            print(f"IXC ID do login: {session.get('ixcId', 'N/A')}", flush=True)
             
             # Desconectar do Mikrotik
             disconnect_session(session['mac'])
+            
+            # Remover login do IXC
+            if session.get('ixcId'):
+                delete_ixc_login(session['ixcId'])
             
             # Marcar como desconectada no banco
             mark_session_as_disconnected(session['id'])
@@ -242,6 +295,7 @@ def main():
     """Função principal"""
     print("=== Mikrotik User Session Disconnect Cron ===", flush=True)
     print(f"Servidor Mikrotik: {MIKROTIK_HOST}", flush=True)
+    print(f"Servidor IXC: {IXC_HOST}", flush=True)
     print(f"Intervalo de verificação: {CHECK_INTERVAL_MINUTES} minutos", flush=True)
     
     # Verificar se DATABASE_URL está configurada
